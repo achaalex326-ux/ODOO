@@ -33,7 +33,7 @@ ni la contraseña maestra de bases de datos. No hay contraseñas incluidas en el
 
 La app usa la API JSON-RPC estándar de Odoo, con cookie de sesión en memoria. No necesita
 modificar el módulo del curso. Busca el empleado a partir del usuario autenticado: no fija los
-IDs de usuario ni empleado. Lee y escribe `hr.attendance` y consulta `resource.calendar.attendance`.
+IDs de usuario ni empleado. Lee `hr.attendance` y consulta `resource.calendar.attendance`. El fichaje propio usa el controlador oficial de Odoo con la hora del servidor; el cierre administrativo usa `hr.attendance.write`.
 Instala Empleados/Asistencias, vincula el empleado a tu usuario y configura su horario.
 El servidor aplica sus ACL y reglas de registros: la app no otorga permisos ni usa `sudo`.
 El administrador utilizado en la práctica puede hacer estas operaciones; para otros usuarios,
@@ -51,7 +51,7 @@ la prueba desde Windows no garantiza la ruta de un teléfono físico. No requier
 - Historial convierte UTC a la zona del dispositivo; el horario conserva la hora del calendario Odoo.
 - Confirma entrada/salida, serializa operaciones y no reintenta escrituras automáticamente.
 - Si falla una operación, actualiza el estado antes de repetirla para evitar duplicados.
-- El reloj del dispositivo debe estar correcto: las marcas se envían en UTC.
+- El fichaje propio usa la hora de Odoo. El cierre administrativo usa la hora UTC del dispositivo; mantén su reloj sincronizado.
 
 ## APK y comprobaciones
 
@@ -77,3 +77,10 @@ la comprobación contra tu Ubuntu.
 - `testDebugUnitTest`: 5 pruebas, 0 fallos, 0 errores y 0 omitidas.
 - `lintDebug`: 0 errores y 19 advertencias no bloqueantes (principalmente recursos de la plantilla sin uso).
 - No se ejecutó un emulador ni se accedió al Odoo de VMware desde este entorno; la prueba funcional en tu red sigue pendiente.
+
+## Empleado y Administrador
+
+La versión con roles añade un panel Equipo exclusivo para el grupo Administrador de Asistencias de Odoo.
+Consulta [ROLES.md](ROLES.md) para configurar dos cuentas, conocer los permisos y hacer la demostración.
+No se elige el rol en el login: lo determina el servidor. Las pruebas de la versión anterior
+indicadas arriba corresponden a la entrega inicial; la nueva suite incluye los casos de roles.

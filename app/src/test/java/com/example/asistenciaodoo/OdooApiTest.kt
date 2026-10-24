@@ -40,10 +40,16 @@ class OdooApiTest {
             val p = body.getJSONObject("params")
             val result: Any = if (request.path == "/web/session/authenticate") {
                 JSONObject().put("uid", 23).put("user_context", JSONObject().put("company_id", 4))
+            } else if (request.path == "/hr_attendance/systray_check_in_out") {
+                assertEquals("session_id=test-session", request.getHeader("Cookie"))
+                assertEquals(0, p.length())
+                open = !open
+                JSONObject().put("attendance_state", if (open) "checked_in" else "checked_out")
             } else {
                 assertEquals("session_id=test-session", request.getHeader("Cookie"))
                 calls.add(p)
                 when (p.getString("model")) {
+                    "res.users" -> false
                     "hr.employee" -> JSONArray("""[{"id":42,"name":"Alexander","department_id":[2,"Management"],"resource_calendar_id":[3,"Standard"]}]""")
                     "resource.calendar.attendance" -> JSONArray("""[{"dayofweek":"0","hour_from":12.0,"hour_to":13.0,"day_period":"lunch","week_type":false}]""")
                     else -> when (p.getString("method")) {
@@ -69,11 +75,9 @@ class OdooApiTest {
             try { api.checkIn(); fail("Allowed duplicate entry") } catch (_: OdooException) { }
             api.checkOut()
             assertNull(api.dashboard().open)
-            val create = calls.single { it.getString("method") == "create" }
-            assertEquals(42, create.getJSONArray("args").getJSONObject(0).getInt("employee_id"))
-            val write = calls.single { it.getString("method") == "write" }
-            assertEquals(88, write.getJSONArray("args").getJSONArray(0).getInt(0))
-            val employeeDomain = calls.first().getJSONArray("args").getJSONArray(0)
+            assertEquals(AppRole.EMPLOYEE, api.role)
+            assertFalse(calls.any { it.optString("method") in listOf("create", "write") })
+            val employeeDomain = calls.first { it.getString("model") == "hr.employee" }.getJSONArray("args").getJSONArray(0)
             assertTrue(employeeDomain.toString().contains("23"))
             assertTrue(employeeDomain.toString().contains("company_id"))
         } finally { server.shutdown() }

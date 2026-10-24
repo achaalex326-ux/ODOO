@@ -11,6 +11,8 @@ import java.util.Locale
 import java.util.TimeZone
 
 data class ConnectionSettings(val server: String, val database: String, val login: String)
+enum class AppRole(val label: String) { EMPLOYEE("Empleado"), ADMIN("Administrador") }
+data class TeamAttendance(val attendance: Attendance, val employeeName: String)
 data class Employee(val id: Int, val name: String, val department: String, val calendarId: Int)
 data class Attendance(val id: Int, val checkIn: String, val checkOut: String?, val hours: Double)
 data class WorkPeriod(val day: Int, val from: Double, val to: Double, val lunch: Boolean, val week: String?)
@@ -25,6 +27,9 @@ class OdooApi(settings: ConnectionSettings) {
     private val login = settings.login.trim()
     private var cookie = ""
     private lateinit var employee: Employee
+    var role: AppRole = AppRole.EMPLOYEE
+        private set
+    private var userId = 0
 
     private fun request(path: String, body: JSONObject): JSONObject {
         val connection = URL(server + path).openConnection() as HttpURLConnection
@@ -85,6 +90,10 @@ class OdooApi(settings: ConnectionSettings) {
         }) as? JSONObject ?: throw OdooException("Usuario o contraseña incorrectos.")
         val uid = session.optInt("uid")
         if (uid <= 0) throw OdooException("Usuario o contraseña incorrectos.")
+        userId = uid
+        role = if (call("res.users", "has_group", JSONArray()
+            .put(JSONArray().put(uid)).put("hr_attendance.group_hr_attendance_manager")) == true)
+            AppRole.ADMIN else AppRole.EMPLOYEE
         val company = session.optJSONObject("user_context")?.optInt("company_id") ?: 0
         val domain = JSONArray().put(condition("user_id", "=", uid))
         if (company > 0) domain.put(condition("company_id", "=", company))
@@ -127,18 +136,48 @@ class OdooApi(settings: ConnectionSettings) {
 
     fun checkIn() {
         if (openAttendance() != null) throw OdooException("Ya existe una jornada abierta. Actualiza el estado.")
-        val result = call("hr.attendance", "create", JSONArray().put(JSONObject().apply {
-            put("employee_id", employee.id); put("check_in", utcNow())
-        }))
-        if ((result as? Number)?.toInt()?.let { it > 0 } != true)
-            throw OdooException("Odoo no confirmó la entrada. Actualiza antes de volver a intentarlo.")
+        toggleOwnAttendance("checked_in")
     }
 
     fun checkOut() {
-        val open = openAttendance() ?: throw OdooException("No hay una entrada abierta. Actualiza el estado.")
-        val result = call("hr.attendance", "write", JSONArray()
-            .put(JSONArray().put(open.id)).put(JSONObject().put("check_out", utcNow())))
-        if (result != true) throw OdooException("Odoo no confirmó la salida. Actualiza el estado.")
+        if (openAttendance() == null) throw OdooException("No hay una entrada abierta. Actualiza el estado.")
+        toggleOwnAttendance("checked_out")
+    }
+
+    private fun toggleOwnAttendance(expected: String) {
+        // Odoo chooses the employee from the authenticated session and uses server time.
+        // No employee ID is accepted here, and there are no automatic retries.
+        val result = rpc("/hr_attendance/systray_check_in_out", JSONObject()) as? JSONObject
+            ?: throw OdooException("Odoo no confirmó el fichaje. Actualiza el estado.")
+        if (result.optString("attendance_state") != expected)
+            throw OdooException("El estado cambió durante la operación. Actualiza antes de continuar.")
+    }
+
+    private fun requireAdmin() {
+        // Revalidate against Odoo on each administrative request, including revocations.
+        if (call("res.users", "has_group", JSONArray().put(JSONArray().put(userId))
+                .put("hr_attendance.group_hr_attendance_manager")) != true)
+            throw OdooException("Esta función requiere el rol Administrador de Asistencias en Odoo.")
+    }
+
+    fun teamAttendance(): List<TeamAttendance> {
+        requireAdmin()
+        val rows = search("hr.attendance", JSONArray(), attendanceFields + "employee_id", "check_in desc", 100)
+        return (0 until rows.length()).map {
+            val row = rows.getJSONObject(it)
+            TeamAttendance(parseAttendance(row), row.optJSONArray("employee_id")?.optString(1).orEmpty())
+        }
+    }
+
+    fun closeTeamAttendance(id: Int) {
+        requireAdmin()
+        val rows = search("hr.attendance", JSONArray().put(condition("id", "=", id))
+            .put(condition("check_out", "=", false)), attendanceFields, limit = 1)
+        if (rows.length() == 0) throw OdooException("La jornada ya se cerró o no tienes acceso. Actualiza el equipo.")
+        // Native ACLs and multi-company record rules still apply to search and write.
+        if (call("hr.attendance", "write", JSONArray().put(JSONArray().put(id))
+                .put(JSONObject().put("check_out", utcNow()))) != true)
+            throw OdooException("No se confirmó el cierre. Actualiza antes de repetirlo.")
     }
 
     fun logout() {

@@ -39,13 +39,14 @@ fun AttendanceApp(vm: AttendanceViewModel = viewModel()) {
     val state = vm.state
     var tab by rememberSaveable { mutableIntStateOf(0) }
     var confirm by remember { mutableStateOf(false) }
+    var teamConfirm by remember { mutableStateOf<TeamAttendance?>(null) }
     MaterialTheme(colorScheme = lightColorScheme(primary = Teal, secondary = Navy,
         background = Mist, surface = Color.White)) {
         Scaffold(containerColor = Mist, bottomBar = {
             if (state.employee != null) NavigationBar(containerColor = Color.White) {
-                val labels = listOf("Inicio", "Horario", "Historial", "Ajustes")
-                val icons = listOf(Icons.Outlined.Home, Icons.Outlined.DateRange, Icons.Outlined.List, Icons.Outlined.Settings)
-                labels.forEachIndexed { i, label -> NavigationBarItem(selected = tab == i, onClick = { tab = i },
+                val labels = listOf("Inicio", "Horario", "Historial", "Ajustes") + if (state.role == AppRole.ADMIN) listOf("Equipo") else emptyList()
+                val icons = listOf(Icons.Outlined.Home, Icons.Outlined.DateRange, Icons.Outlined.List, Icons.Outlined.Settings, Icons.Outlined.Person)
+                labels.forEachIndexed { i, label -> NavigationBarItem(selected = tab == i, onClick = { tab = i; if (i == 4 && !state.teamLoaded && !state.busy) vm.refreshTeam() },
                     icon = { Icon(icons[i], null) }, label = { Text(label) }) }
             }
         }) { padding ->
@@ -68,7 +69,7 @@ fun AttendanceApp(vm: AttendanceViewModel = viewModel()) {
                     verticalArrangement = Arrangement.spacedBy(16.dp)) {
                     when (tab) {
                         0 -> {
-                            item { PageTitle("Hola, ${state.employee.name.substringBefore(' ')}", state.employee.department.ifBlank { "Mi espacio de trabajo" }) }
+                            item { PageTitle("Hola, ${state.employee.name.substringBefore(' ')}", "${state.role.label} · ${state.employee.department.ifBlank { "Mi espacio de trabajo" }}") }
                             item {
                                 val data = state.dashboard
                                 val active = data?.open != null
@@ -128,10 +129,32 @@ fun AttendanceApp(vm: AttendanceViewModel = viewModel()) {
                             if (history.isEmpty()) item { Section("Sin registros", Icons.Outlined.List) { Text("Actualiza o registra tu primera entrada.") } }
                             items(history.size, key = { history[it].id }) { AttendanceCard(history[it]) }
                         }
+                        4 -> if (state.role == AppRole.ADMIN) {
+                            item {
+                                PageTitle("Mi equipo", "Panel de Administrador")
+                                Text("Últimas 100 asistencias de las empresas permitidas en Odoo.")
+                                RefreshButton(state.busy, vm::refreshTeam)
+                            }
+                            if (!state.teamLoaded) item { Text("Pulsa Actualizar para cargar las asistencias del equipo.") }
+                            else if (state.team.isEmpty()) item { Text("No hay asistencias disponibles.") }
+                            items(state.team.size, key = { state.team[it].attendance.id }) { index ->
+                                val record = state.team[index]
+                                Section(record.employeeName, Icons.Outlined.Person) {
+                                    Text("Entrada · ${displayDate(record.attendance.checkIn)}")
+                                    Text("Salida · ${record.attendance.checkOut?.let { displayDate(it) } ?: "Pendiente"}")
+                                    if (record.attendance.checkOut == null) {
+                                        OutlinedButton(onClick = { teamConfirm = record }, enabled = !state.busy && !state.uncertain) {
+                                            Text("Registrar salida del empleado")
+                                        }
+                                    } else Text(durationLabel(record.attendance.hours), color = Teal)
+                                }
+                            }
+                        }
                         3 -> {
                             item { PageTitle("Mi cuenta", "Conexión con Odoo") }
                             item {
                                 Section(state.employee.name, Icons.Outlined.Person) {
+                                    Text("Rol: ${state.role.label}", color = Teal, fontWeight = FontWeight.Bold)
                                     Text("${state.employee.department}\nEmpleado #${state.employee.id}")
                                     HorizontalDivider()
                                     Text("Servidor", fontWeight = FontWeight.Bold)
@@ -154,6 +177,12 @@ fun AttendanceApp(vm: AttendanceViewModel = viewModel()) {
                     }
                 }
             }
+        }
+        teamConfirm?.let { record ->
+            AlertDialog(onDismissRequest = { teamConfirm = null }, title = { Text("¿Cerrar jornada del empleado?") },
+                text = { Text("Registrarás la salida actual para ${record.employeeName}. Esta acción se guardará en Odoo.") },
+                confirmButton = { TextButton(onClick = { teamConfirm = null; vm.closeTeam(record.attendance.id) }) { Text("Confirmar salida") } },
+                dismissButton = { TextButton(onClick = { teamConfirm = null }) { Text("Cancelar") } })
         }
         if (confirm) AlertDialog(onDismissRequest = { confirm = false }, title = {
             Text(if (state.dashboard?.open != null) "¿Finalizar jornada?" else "¿Comenzar jornada?")
