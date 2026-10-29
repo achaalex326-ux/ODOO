@@ -46,14 +46,20 @@ class AttendanceViewModel : ViewModel() {
         val employee = client.authenticate(password)
         api = client
         publish { connection = settings; state = state.copy(employee = employee, role = client.role); success() }
-        val data = client.dashboard()
-        publish { state = state.copy(dashboard = data, uncertain = false) }
+        if (client.role == AppRole.ADMIN) {
+            val rows = client.teamAttendance()
+            publish { state = state.copy(team = rows, teamLoaded = true, uncertain = false) }
+        } else {
+            val data = client.dashboard()
+            publish { state = state.copy(dashboard = data, uncertain = false) }
+        }
     }
     fun refresh() = task {
         val data = requireNotNull(api).dashboard()
         publish { state = state.copy(dashboard = data, uncertain = false) }
     }
     fun register() {
+        if (state.role != AppRole.EMPLOYEE) return
         val current = state.dashboard ?: return
         if (state.uncertain) return
         val exiting = current.open != null
@@ -68,17 +74,6 @@ class AttendanceViewModel : ViewModel() {
     fun refreshTeam() = task {
         val rows = requireNotNull(api).teamAttendance()
         publish { state = state.copy(team = rows, teamLoaded = true, uncertain = false) }
-    }
-    fun closeTeam(id: Int) {
-        if (state.role != AppRole.ADMIN || state.uncertain) return
-        task(write = true) {
-            val client = requireNotNull(api)
-            client.closeTeamAttendance(id)
-            val rows = client.teamAttendance()
-            val data = client.dashboard()
-            publish { state = state.copy(team = rows, teamLoaded = true, dashboard = data,
-                uncertain = false, message = "Salida del empleado guardada en Odoo.") }
-        }
     }
     fun logout() = task {
         try { api?.logout() } finally {

@@ -18,6 +18,8 @@ data class Attendance(val id: Int, val checkIn: String, val checkOut: String?, v
 data class WorkPeriod(val day: Int, val from: Double, val to: Double, val lunch: Boolean, val week: String?)
 data class Dashboard(val history: List<Attendance>, val open: Attendance?, val periods: List<WorkPeriod>)
 
+fun roleTabs(role: AppRole): List<Int> = if (role == AppRole.ADMIN) listOf(4, 3) else listOf(0, 1, 2, 3)
+
 class OdooException(message: String) : Exception(message)
 
 /** One instance per login. Passwords and session cookies are never persisted. */
@@ -77,9 +79,9 @@ class OdooApi(settings: ConnectionSettings) {
             put("model", model); put("method", method); put("args", args); put("kwargs", kwargs)
         })
 
-    private fun search(model: String, domain: JSONArray, fields: List<String>, order: String = "id", limit: Int = 100): JSONArray =
+    private fun search(model: String, domain: JSONArray, fields: List<String>, order: String = "id", limit: Int = 100, offset: Int = 0): JSONArray =
         call(model, "search_read", JSONArray().put(domain), JSONObject().apply {
-            put("fields", JSONArray(fields)); put("order", order); put("limit", limit)
+            put("fields", JSONArray(fields)); put("order", order); put("limit", limit); put("offset", offset)
         }) as JSONArray
 
     fun authenticate(password: String): Employee {
@@ -94,6 +96,10 @@ class OdooApi(settings: ConnectionSettings) {
         role = if (call("res.users", "has_group", JSONArray()
             .put(JSONArray().put(uid)).put("hr_attendance.group_hr_attendance_manager")) == true)
             AppRole.ADMIN else AppRole.EMPLOYEE
+        if (role == AppRole.ADMIN) {
+            employee = Employee(0, session.optString("name", login), "Administración", 0)
+            return employee
+        }
         val company = session.optJSONObject("user_context")?.optInt("company_id") ?: 0
         val domain = JSONArray().put(condition("user_id", "=", uid))
         if (company > 0) domain.put(condition("company_id", "=", company))
@@ -135,11 +141,13 @@ class OdooApi(settings: ConnectionSettings) {
     }
 
     fun checkIn() {
+        requireEmployee()
         if (openAttendance() != null) throw OdooException("Ya existe una jornada abierta. Actualiza el estado.")
         toggleOwnAttendance("checked_in")
     }
 
     fun checkOut() {
+        requireEmployee()
         if (openAttendance() == null) throw OdooException("No hay una entrada abierta. Actualiza el estado.")
         toggleOwnAttendance("checked_out")
     }
@@ -162,22 +170,23 @@ class OdooApi(settings: ConnectionSettings) {
 
     fun teamAttendance(): List<TeamAttendance> {
         requireAdmin()
-        val rows = search("hr.attendance", JSONArray(), attendanceFields + "employee_id", "check_in desc", 100)
-        return (0 until rows.length()).map {
-            val row = rows.getJSONObject(it)
-            TeamAttendance(parseAttendance(row), row.optJSONArray("employee_id")?.optString(1).orEmpty())
+        val result = mutableListOf<TeamAttendance>()
+        var offset = 0
+        while (true) {
+            val rows = search("hr.attendance", JSONArray(), attendanceFields + "employee_id", "check_in desc, id desc", 200, offset)
+            for (index in 0 until rows.length()) {
+                val row = rows.getJSONObject(index)
+                result.add(TeamAttendance(parseAttendance(row), row.optJSONArray("employee_id")?.optString(1).orEmpty()))
+            }
+            if (rows.length() < 200) break
+            offset += rows.length()
         }
+        return result.distinctBy { it.attendance.id }
     }
 
-    fun closeTeamAttendance(id: Int) {
-        requireAdmin()
-        val rows = search("hr.attendance", JSONArray().put(condition("id", "=", id))
-            .put(condition("check_out", "=", false)), attendanceFields, limit = 1)
-        if (rows.length() == 0) throw OdooException("La jornada ya se cerró o no tienes acceso. Actualiza el equipo.")
-        // Native ACLs and multi-company record rules still apply to search and write.
-        if (call("hr.attendance", "write", JSONArray().put(JSONArray().put(id))
-                .put(JSONObject().put("check_out", utcNow()))) != true)
-            throw OdooException("No se confirmó el cierre. Actualiza antes de repetirlo.")
+    private fun requireEmployee() {
+        if (role != AppRole.EMPLOYEE)
+            throw OdooException("La cuenta Administrador solo consulta asistencias. Usa una cuenta Empleado para marcar.")
     }
 
     fun logout() {
