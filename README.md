@@ -84,3 +84,8 @@ La versión 1.2 abre directamente Equipo para el Administrador, que solo consult
 Consulta [ROLES.md](ROLES.md) para configurar dos cuentas, conocer los permisos y hacer la demostración.
 No se elige el rol en el login: lo determina el servidor. Las pruebas de la versión anterior
 indicadas arriba corresponden a la entrega inicial; la nueva suite incluye los casos de roles.
+
+## Informes del administrador (1.3)
+
+Equipo incluye filtros por empleado, rango de fechas de entrada y estado. Permite exportar los
+resultados filtrados a PDF multipágina, Excel XLSX e impresión Android. Detalles en [ROLES.md](ROLES.md).

@@ -49,3 +49,35 @@ de la red de prácticas.
 La suite comprueba sesión, empleado, fichaje propio, cookies, UTC, roles, revocación, administrador
 sin ficha de empleado, bloqueo de marcas administrativas, navegación por rol y lectura de más de
 una página de asistencias. La prueba con las dos cuentas reales debe realizarse en tu red de VMware.
+
+## Filtros, PDF, Excel e impresión (1.3)
+
+En Equipo el administrador puede buscar por nombre, seleccionar fechas Desde/Hasta y filtrar
+Todas/Abiertas/Cerradas. Las fechas son inclusivas y se aplican al día de **entrada**, convertido
+a la zona horaria del dispositivo; una jornada nocturna pertenece al día en que empezó.
+Pulsa Limpiar filtros para volver a ver todos los registros.
+
+PDF y Excel exportan únicamente los resultados filtrados, con zona horaria, filtros y fecha de
+elaboración. Excel es un XLSX real con columnas filtrables y horas numéricas para jornadas cerradas.
+Las jornadas abiertas se identifican como pendientes y no se suman al total de horas.
+Android pregunta dónde guardar el archivo; no se necesitan permisos generales de almacenamiento.
+Al cancelar ese selector no se guarda ningún informe. Los informes contienen datos de empleados:
+selecciona una ubicación apropiada para la presentación.
+
+Imprimir informe abre el diálogo de impresión de Android. Allí puedes elegir una impresora
+configurada o Guardar como PDF. El PDF es A4 horizontal y se divide en páginas; al imprimir un
+rango se generan solamente esas páginas. Las impresoras disponibles dependen del servicio de
+impresión instalado en el teléfono.
+
+Comprobación en el dispositivo: busca José, elige una fecha/estado, exporta ambos formatos y
+comprueba que contienen las mismas filas mostradas. Abre PDF en un visor y XLSX en Excel o
+LibreOffice. Prueba el diálogo Imprimir y un rango de páginas si el informe tiene varias.
+Las pruebas instrumentadas `ReportDocumentsTest` verifican que Android puede abrir los PDF
+multipágina y los rangos de impresión; se ejecutan con un dispositivo/emulador conectado mediante
+`./gradlew connectedDebugAndroidTest`. Su existencia no implica que se hayan ejecutado en la nube.
+
+Validación 1.3: APK principal y APK de pruebas instrumentadas compilados, 15 pruebas JVM
+aprobadas (0 fallos/omitidas), lint sin errores y XLSX leído con openpyxl comprobando filas,
+nombre, fechas y celdas numéricas. Las pruebas instrumentadas de PDF se compilaron, pero no
+se ejecutaron en un dispositivo. El guardado mediante el selector Android y el servicio de
+impresión deben comprobarse en el teléfono/emulador de la presentación.

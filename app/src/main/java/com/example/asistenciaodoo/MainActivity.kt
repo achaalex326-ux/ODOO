@@ -39,6 +39,13 @@ fun AttendanceApp(vm: AttendanceViewModel = viewModel()) {
     val state = vm.state
     var tab by rememberSaveable { mutableIntStateOf(0) }
     var confirm by remember { mutableStateOf(false) }
+    var employeeFilter by rememberSaveable { mutableStateOf("") }
+    var fromFilter by rememberSaveable { mutableStateOf("") }
+    var untilFilter by rememberSaveable { mutableStateOf("") }
+    var statusFilter by rememberSaveable { mutableIntStateOf(0) }
+    val reportFilter = AttendanceFilter(employeeFilter, fromFilter, untilFilter, AttendanceStatus.entries[statusFilter])
+    val zone = TimeZone.getDefault()
+    val filteredTeam = remember(state.team, reportFilter, zone.id) { filterAttendance(state.team, reportFilter, zone) }
     MaterialTheme(colorScheme = lightColorScheme(primary = Teal, secondary = Navy,
         background = Mist, surface = Color.White)) {
         Scaffold(containerColor = Mist, bottomBar = {
@@ -137,10 +144,16 @@ fun AttendanceApp(vm: AttendanceViewModel = viewModel()) {
                                 Text("${state.team.size} registros · ${state.team.count { it.attendance.checkOut == null }} jornadas abiertas")
                                 RefreshButton(state.busy, vm::refreshTeam)
                             }
+                            item(key = "admin-report-filters") {
+                                AdminReportControls(reportFilter, { filter ->
+                                    employeeFilter = filter.employee; fromFilter = filter.from
+                                    untilFilter = filter.until; statusFilter = filter.status.ordinal
+                                }, filteredTeam, state.teamLoaded && !state.busy)
+                            }
                             if (!state.teamLoaded) item { Text("Pulsa Actualizar para cargar las asistencias del equipo.") }
-                            else if (state.team.isEmpty()) item { Text("No hay asistencias disponibles.") }
-                            items(state.team.size, key = { state.team[it].attendance.id }) { index ->
-                                val record = state.team[index]
+                            else if (filteredTeam.isEmpty()) item { Text("No hay asistencias que coincidan con los filtros.") }
+                            items(filteredTeam.size, key = { filteredTeam[it].attendance.id }) { index ->
+                                val record = filteredTeam[index]
                                 Section(record.employeeName, Icons.Outlined.Person) {
                                     Text("Entrada · ${displayDate(record.attendance.checkIn)}")
                                     Text("Salida · ${record.attendance.checkOut?.let { displayDate(it) } ?: "Pendiente"}")
